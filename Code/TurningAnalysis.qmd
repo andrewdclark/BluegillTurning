@@ -1,0 +1,677 @@
+---
+title: "TurningAnalysis"
+format: pdf
+editor: source
+---
+
+# Importing
+
+## Library import and global variables
+```{r libraries and functions, message = FALSE, output = FALSE}
+library(here)
+here::i_am('Code/TurningAnalysis.qmd')
+source(here('Code/Functions/CalcFunctions.R'))
+importLibraries()
+
+bodypartorder <- c('Snout','GillCenterLow','PelvFinsCenter','MidPelvAnal',
+                   'AnalBase','MidAnalBasePeduncle','Peduncle')
+dt = 1/60
+```
+
+## Read in data and select relevant columns
+```{r data import, message=FALSE}
+maindata <- read_csv(here("ProcessedData/fulldata.csv")) |> 
+  mutate(bodypart = factor(bodypart, levels = bodypartorder),
+         ID = factor(ID),
+         Individual = factor(Individual)) |> 
+  select(c('ID', 'Speed.BLs', 'Speed.group', 'frame', 't.sec',
+           'bodypart', 'xs.cm', 'ys.cm', 'Individual', 'Trial',
+           'Turn', 'FullBL', 'mass.g', 's0'))
+
+head(maindata)
+```
+
+## How do the traces for a fast vs. a slow turn (respectively) look?
+```{r body traces for a fast vs. slow turn, warning = FALSE}
+maindata %>% bodyTracesPlot('BG63_14_8', 4)+ xlim(c(242,264)) + ylim(c(2495, 2505))
+ggsave('FastTurnBodyTrace.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
+maindata %>% bodyTracesPlot('BG63_17_5', 4) + xlim(c(242,264)) + ylim(c(2495, 2505))
+ggsave('SlowTurnBodyTrace.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
+```
+
+# Snout Velocity
+
+## We can look at the velocity of the snout in greater detail
+
+We do this by calculating the change in angle, then the change in the change in angle over time
+
+```{r look at snout velocity, message = FALSE}
+SnoutAngChangeButter <- signal::butter(3, 4/(60/2), 'low')
+
+SnoutVelocityDataPreTrim <- maindata |> calcAngChange() |> runSnoutAngButter(SnoutAngChangeButter) |> calcAngVel(dt)|> AddBackSpeed(maindata) 
+
+SnoutVelocityData <- SnoutVelocityDataPreTrim |> trimFrames()
+```
+
+## And we can compare snout angular velocity, first with plots
+```{r look at how long the turns take, message = FALSE, warning = FALSE}
+SnoutVelocityData |> SnoutAnglePlot()
+ggsave('SnouAngleChangeOverTime.jpg', path = here("ProcessedData/Figures/"), width = 6.5, height = 2, dpi = 300)
+
+meansnoutvelslow <- SnoutVelocityData |> calcMeanSnoutVelocity('Slow', 1)
+
+SnoutVelocityData |> SlowSnoutVelocityPlot(meansnoutvelslow)
+ggsave('SnouAngleVelocityOverTimeSLOWcentered.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
+
+meansnoutvelfast <- SnoutVelocityData |> calcMeanSnoutVelocity('Fast', .75)
+
+SnoutVelocityData |> FastSnoutVelocityPlot(meansnoutvelfast)
+ggsave('SnouAngleVelocityOverTimeFASTcentered.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
+```
+
+### Then with stats
+```{r}
+MeanVelStats <- SnoutVelocityData |> 
+  summarize(ID = first(ID),
+            Speed.group = first(Speed.group),
+            meansnoutvel.degps = mean(snoutangle.degps, na.rm = TRUE)) |> 
+  mutate(Individual = substr(ID, 1, 4))
+
+MaxVelStats <- SnoutVelocityData |> 
+  summarize(ID = first(ID),
+            Speed.group = first(Speed.group),
+            maxsnoutvel.degps = max(snoutangle.degps, na.rm = TRUE)) |> 
+  mutate(Individual = substr(ID, 1, 4))
+
+Anova(lmer(meansnoutvel.degps ~ Speed.group + (1 | Individual), data = MeanVelStats))
+Anova(lmer(maxsnoutvel.degps ~ Speed.group + (1 | Individual), data = MaxVelStats))
+
+MeanVelStatsSlow <- MeanVelStats |> filter(Speed.group == 'Slow')
+MeanVelStatsFast <- MeanVelStats |> filter(Speed.group == 'Fast')
+summary(MeanVelStatsSlow$meansnoutvel.degps)
+sd(MeanVelStatsSlow$meansnoutvel.degps, na.rm = TRUE)
+summary(MeanVelStatsFast$meansnoutvel.degps)
+sd(MeanVelStatsFast$meansnoutvel.degps, na.rm = TRUE)
+
+MaxVelStatsSlow <- MaxVelStats |> filter(Speed.group == 'Slow')
+MaxVelStatsFast <- MaxVelStats |> filter(Speed.group == 'Fast')
+summary(MaxVelStatsSlow$maxsnoutvel.degps)
+sd(MaxVelStatsSlow$maxsnoutvel.degps, na.rm = TRUE)
+summary(MaxVelStatsFast$maxsnoutvel.degps)
+sd(MaxVelStatsFast$maxsnoutvel.degps, na.rm = TRUE)
+```
+
+# Moment of Inertia
+
+Moment of inertia is $$ I = \sum m_i r_i^2 $$
+
+And can integrate MoI to get a sense of how bent the body is overall during the turn
+
+## First, let's add each individual's maximum theoretical MoI
+```{r}
+MaxMoI <- maindata |> calcMaxMoI()
+```
+
+## Now we calculate the MoI in each frame
+```{r calculate MoI and look at its integral, message = FALSE}
+MoIPreTrim <- maindata |> 
+  calcMoI() |> 
+  left_join(MaxMoI, by = c('Individual'))
+
+MoI <- MoIPreTrim |> trimFrames()
+
+MoI <- SnoutVelocityData |> select(ID, frame, snoutangle.degps) |> right_join(MoI, by = c('ID', 'frame'))
+
+meanmoislow <- MoI |> calcMeanMoI('Slow',1)
+```
+
+## And we plot it
+```{r}
+MoI |> SlowMoIPlot(meanmoislow)
+ggsave('MoIOverTimeSLOWcentered.jpg', path = here("ProcessedData/Figures/"),
+       width = 3.25, height = 2, dpi = 300)
+
+meanmoifast <- MoI |> calcMeanMoI('Fast',.75)
+
+MoI |> FastMoIPlot(meanmoifast)
+ggsave('MoIOverTimeFASTcentered.jpg', path = here("ProcessedData/Figures/"),
+       width = 3.25, height = 2, dpi = 300)
+```
+
+### And run some stats
+```{r}
+MoIpercstats <- MoI |> 
+  group_by(ID) |> 
+  mutate(percMoI = MoI.gcm2/MaxMoI.gcm2) |> 
+  group_by(ID) |> 
+  summarize(ID = first(ID),
+            Individual = first(Individual),
+            Speed.group = first(Speed.group),
+            minpercMoI = min(percMoI),
+            meanpercMoI = mean(percMoI))
+
+MoIslow <- MoIpercstats |> 
+  filter(Speed.group == 'Slow')
+
+MoIfast <- MoIpercstats |> 
+  filter(Speed.group == 'Fast')
+
+summary(MoIslow$minpercMoI)
+sd(MoIslow$minpercMoI)
+
+summary(MoIfast$minpercMoI)
+sd(MoIfast$minpercMoI)
+
+Anova(lmer(minpercMoI ~ Speed.group + (1 | Individual), data = MoIpercstats))
+
+summary(MoIslow$meanpercMoI)
+sd(MoIslow$meanpercMoI)
+
+summary(MoIfast$meanpercMoI)
+sd(MoIfast$meanpercMoI)
+
+Anova(lmer(meanpercMoI ~ Speed.group + (1 | Individual), data = MoIpercstats))
+```
+
+## Now we compare MoI and speed with stats and plots
+```{r}
+MeanMoIMeanSnoutAng <- SnoutVelocityData |> 
+  group_by(ID) |> 
+  calcMeanMoIMeanSnoutVel() 
+
+meanSnoutAng.lm <- lm(meansnoutangle.degps ~ meanpercMoI, data = MeanMoIMeanSnoutAng)
+summary(meanSnoutAng.lm)
+
+MoISnoutAngFast <- MeanMoIMeanSnoutAng |> AddBackSpeed(maindata) |> filter(Speed.group == 'Fast')
+meanFastSnoutAng.lm <- lm(meansnoutangle.degps ~ meanpercMoI, data = MoISnoutAngFast)
+summary(meanFastSnoutAng.lm)
+
+MoISnoutAngSlow <- MeanMoIMeanSnoutAng |> AddBackSpeed(maindata) |> filter(Speed.group == 'Slow')
+meanSlowSnoutAng.lm <- lm(meansnoutangle.degps ~ meanpercMoI, data = MoISnoutAngSlow)
+summary(meanSlowSnoutAng.lm)
+
+MeanMoIMeanSnoutAng |> MeanMoiMeanSnoutAngVelPlot(meanSnoutAng.lm, meanFastSnoutAng.lm, meanSlowSnoutAng.lm)
+ggsave('SnoutVelMoI.jpg', path = here("ProcessedData/Figures/"), width = 6.5, height = 4, dpi = 300)
+```
+
+# Torque
+
+Torque is the $$ \tau = \frac{d}{dt} \sum I_i \omega_i $$ If we work out the derivative, we end up with $$ \tau = \sum m_i \left(2 r_i \omega_i \dot{r_i} + r_i^2 \dot{\omega_i} \right) $$
+
+## Calculate torque for the whole dataset
+```{r whole dataset torque calcuation, message = FALSE}
+torquedataPreTrim <- maindata |> calcTorque()
+
+torquedata <- torquedataPreTrim |> trimFrames()
+```
+
+# Timing
+
+## First we look at timing of snout angular velocity and MoI
+```{r}
+MoISnoutVelTiming <- MoI |> 
+  mutate(maxT.sec = max(t.sec, na.rm = TRUE)) |> 
+  na.omit() |> 
+  reframe(maxT.sec = first(maxT.sec),
+          tmaxVel = first(t.sec[which.max(snoutangle.degps)]),
+          tminMoI = first(t.sec[which.min(MoI.gcm2)]),
+          Speed.group = first(as.character(Speed.group))) 
+
+MoISnoutVelTiming |> MoISnoutVelTimingPlot()
+ggsave('VelocityMoITiming.jpg', path = here("ProcessedData/Figures/"), width = 6.5, height = 4, dpi = 300)
+
+MoIvelTiming <- MoISnoutVelTiming %>% 
+  group_by(ID) %>% 
+  pivot_longer(cols = c(tmaxVel, tminMoI),
+               names_to = 'var',
+               values_to = 'val') |> 
+  reframe(ID = first(ID),
+          MoIVelRatio = lead(val)/val) |> 
+  na.omit() |> 
+  mutate(MoIorVel = case_when(MoIVelRatio > 1 ~ 'MoISecond',
+                              MoIVelRatio == 1 ~ 'SameTime',
+                              MoIVelRatio < 1 ~ 'MoIFirst'))
+```
+
+### And run the stats
+```{r}
+lmsnoutmoi <- MeanMoIMeanSnoutAng |> AddBackSpeed(maindata)
+
+MeanMoIMeanSnoutAngStats <- MeanMoIMeanSnoutAng |> AddBackSpeed(maindata)
+TotalSnoutAng.lm <- lm(meansnoutangle.degps ~ meanpercMoI*Speed.group, data = MeanMoIMeanSnoutAngStats)
+summary(TotalSnoutAng.lm)
+
+Anova(lmer(meansnoutangle.degps ~ meanpercMoI + (1 | Individual), data = MoISnoutAngSlow))
+Anova(lmer(meansnoutangle.degps ~ meanpercMoI + (1 | Individual), data = MoISnoutAngFast))
+
+Anova(lmer(meansnoutangle.degps ~ meanpercMoI*Speed.group + (1 | Individual), data = MeanMoIMeanSnoutAngStats))
+```
+
+## Then we look into the timing of MoI minimization and torque maximization
+```{r}
+TurnTimeData <- torquedata |> 
+  select(ID, frame, torque.gcm2ps2, t.sec) |> 
+  left_join(MoI, by = c('ID', 'frame', 't.sec'))
+
+TurnTimeData |> TorqueMoITimingPlot()
+ggsave('MoItorquetiming.jpg', path = here("ProcessedData/Figures/"), width = 6.5, height = 4, dpi = 300)
+```
+
+### And run the stats
+```{r}
+torquetimingstats <- TurnTimeData |> 
+  group_by(ID) |> 
+  reframe(tmaxT = t.sec[which.max(torque.gcm2ps2)],
+          tminMoI = t.sec[which.min(MoI.gcm2)],
+          Speed.group = as.character(Speed.group)) %>% 
+  mutate(torquebeforeMoI = tmaxT < tminMoI) |> 
+  group_by(ID) |> 
+  summarize(ID = first(ID),
+            Speed.group = first(Speed.group),
+            torquebeforeMoI = first(torquebeforeMoI))
+
+torquetimingstatsslow <- torquetimingstats |> filter(Speed.group == 'Slow')
+torquetimingstatsfast <- torquetimingstats |> filter(Speed.group == 'Fast')
+
+summary(torquetimingstatsslow$torquebeforeMoI)
+summary(torquetimingstatsfast$torquebeforeMoI)
+
+TurnTimeData.stats <- TurnTimeData |> 
+  group_by(ID) |> 
+  reframe(tmaxT = t.sec[which.max(torque.gcm2ps2)],
+          tminMoI = t.sec[which.min(MoI.gcm2)],
+          Speed.group = as.character(first(Speed.group))) |> 
+  group_by(ID) |>
+  mutate(TimeDiff.sec = tminMoI - tmaxT) |>
+  mutate(Individual = substr(ID,1,4))
+
+turntimeslow <- TurnTimeData.stats |> filter(Speed.group == 'Slow')
+turntimefast <- TurnTimeData.stats |> filter(Speed.group == 'Fast')
+
+summary(turntimeslow$TimeDiff.sec)
+sd(turntimeslow$TimeDiff.sec)
+summary(turntimefast$TimeDiff.sec)
+sd(turntimefast$TimeDiff.sec)
+
+Anova(lmer(TimeDiff.sec ~ Speed.group + (1 | Individual), data = TurnTimeData.stats))
+```
+
+## Then we look at the timing differences in more detail
+```{r}
+TurnTimeData2 <- TurnTimeData |> 
+  group_by(ID) |> 
+  reframe(tmaxT = t.sec[which.max(torque.gcm2ps2)],
+          tminMoI = t.sec[which.min(MoI.gcm2)],
+          Speed.group = as.character(first(Speed.group))) |> 
+  group_by(ID) |>
+  mutate(TimeDiff.sec = tmaxT - tminMoI) |>
+  mutate(Individual = substr(ID,1,4))
+
+TurnTimeData2 |> TorqueMoITimingPlot2()
+ggsave('MoItorquetiming2.jpg', path = here("ProcessedData/Figures/"), width = 5.4, height = 2, dpi = 300)
+```
+
+### And run the stats to compare the time differences to 0
+```{r}
+Anova(lmer(TimeDiff.sec ~ Speed.group + (1 | Individual), data = TurnTimeData2))
+
+linmod <- lmer(TimeDiff.sec ~ Speed.group + (1 | Individual), data = TurnTimeData2)
+Anova(linmod)
+summary(linmod)
+
+# Get estimated means for each group
+group_means <- emmeans(linmod, ~ Speed.group)
+
+# Test if each group's mean is different from zero
+contrast(group_means, method = "identity")
+```
+
+# Snout and Tail
+
+## First we calculate snout and tail angular velocity
+```{r, warning = FALSE}
+TailAngChangeButter <- signal::butter(3, 4/(60/2), 'low')
+taildataPreTrim <- maindata |> calcAngChangeTail() |> runTailAngButter(TailAngChangeButter) |> calcAngVelTail(dt)|> AddBackSpeed(maindata)
+
+taildata <- taildataPreTrim |> trimFrames()
+
+reducedtaildata <- taildata |> 
+  select(ID, t.sec, tailangle.degps, Speed.group)
+
+reducedSnoutVelocityData <- SnoutVelocityData |> 
+  select(ID, t.sec, snoutangle.degps)
+
+SnoutTailAngularVel <- reducedtaildata |> left_join(reducedSnoutVelocityData)
+```
+
+## Then we plot a representative trial
+```{r, warning = FALSE}
+SnoutTailAngularVel |> filter(ID == 'BG63_14_10') |> 
+  select(c(ID, t.sec, tailangle.degps, snoutangle.degps)) |> 
+  mutate(tsnoutmax = t.sec[which.max(snoutangle.degps)],
+         ttailmax = t.sec[which.max(tailangle.degps)]) |> 
+  pivot_longer(cols = c(-ID, -t.sec, -tsnoutmax, -ttailmax))|> 
+  SnoutVsTailAngularVelocityPlot()
+ggsave('SnoutvTailAngVel1Trial.jpg', path = here("ProcessedData/Figures/"), width = 6.5, height = 2, dpi = 300)
+```
+
+## And we look at mins and maxes
+
+First we take only the highest snout and tail velocities for each trial
+```{r}
+SnoutTailSummary <- SnoutTailAngularVel |> 
+  group_by(ID) |> 
+  filter(snoutangle.degps == max(snoutangle.degps, na.rm = TRUE) | tailangle.degps == max(tailangle.degps, na.rm = TRUE)) |> 
+  mutate(Max = case_when(snoutangle.degps == max(snoutangle.degps, na.rm = TRUE) ~ 'Max Snout',
+                         tailangle.degps == max(tailangle.degps, na.rm = TRUE) ~ 'Max Tail'))
+```
+
+## Now we plot the maxes
+
+```{r, warning = FALSE, message = FALSE}
+SnoutTailDotplot <- SnoutTailSummary |> 
+  group_by(ID, t.sec) |> 
+  summarise(ID = first(ID),
+            Speed.group = first(Speed.group),
+            SnoutVel.degps = first(snoutangle.degps),
+            TailVel.degps = first(tailangle.degps),
+            Max = first(Max)) |> 
+  pivot_longer(cols = ends_with('.degps'),
+               names_to = 'Bodypart',
+               values_to = 'AngularVelocity')
+
+SnoutTailDotplot |> SnoutTailComp('Max Snout')
+ggsave('SnoutvTailAngVel.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
+
+SnoutTailDotplot |> SnoutTailComp('Max Tail')
+ggsave('TailvSnoutAngVel.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
+```
+
+### And run the stats
+```{r}
+snoutfastest <- SnoutTailSummary |> filter(Max == 'Max Snout')
+summary(snoutfastest$snoutangle.degps)
+sd(snoutfastest$snoutangle.degps)
+summary(snoutfastest$tailangle.degps)
+sd(snoutfastest$tailangle.degps)
+
+snoutfasteststats <- snoutfastest |> 
+  pivot_longer(cols = ends_with('.degps'),
+               names_to = 'Bodypart',
+               values_to = 'AngularVelocity') |> 
+  mutate(Individual = substr(ID,1,4))
+Anova(lmer(AngularVelocity ~ Bodypart + (1 | Individual), data = snoutfasteststats))
+
+tailfastest <- SnoutTailSummary |> filter(Max == 'Max Tail')
+summary(tailfastest$snoutangle.degps)
+sd(tailfastest$snoutangle.degps)
+summary(tailfastest$tailangle.degps)
+sd(tailfastest$tailangle.degps)
+
+tailfasteststats <- tailfastest |> 
+  pivot_longer(cols = ends_with('.degps'),
+               names_to = 'Bodypart',
+               values_to = 'AngularVelocity') |> 
+  mutate(Individual = substr(ID,1,4))
+Anova(lmer(AngularVelocity ~ Bodypart + (1 | Individual), data = tailfasteststats))
+```
+
+# Pectoral Fins
+
+## Import data
+```{r}
+pecfindatapaths <- list.files(here("RawData/PecFins"), pattern = "[.]csv$", full.names = TRUE)
+pecfindata <- pecfindatapaths |> map(read_csv_filename) |> list_rbind()
+
+pecfinturndetails <- readxl::read_excel(here("RawData/PecFins/PecFinTurnFrames.xlsx"))
+```
+
+## Format data
+```{r}
+pecfindata <- pecfindata |> pecfinformat()
+```
+
+## Now we start analysis by counting number of pec fin strokes
+```{r}
+PecStrokeCount <- pecfindata |> calcPecStrokeNumber(maindata)
+```
+
+## And we calculate pec fin strokes per unit time
+```{r}
+PecStrokeCountTime <- pecfinturndetails |> 
+  rowwise() |> 
+  mutate(totalframes = EndFrame - StartFrame,
+         totaltime = totalframes*dt) |> 
+  select(c(ID, totaltime)) |> 
+  right_join(PecStrokeCount, by = 'ID') |> 
+  group_by(ID) |> 
+  mutate(StrokesPerTime.sps = TotalPecStrokes/totaltime,
+         Individual= substr(ID,1,4))
+```
+
+## How about looking at full time of turn with plots and stats?
+```{r}
+pecstrokes <- PecStrokeCountTime |> select(ID, totaltime, StrokesPerTime.sps) |> right_join(PecStrokeCount, by = 'ID')
+
+totalpecstrokes.lm <- lm(TotalPecStrokes ~ totaltime, data = pecstrokes)
+summary(totalpecstrokes.lm)
+Anova(lmer(TotalPecStrokes ~ Speed.group + (1 | Individual), data = pecstrokes))
+
+pecstrokes |> TotalPecStrokesPlot(totalpecstrokes.lm)
+ggsave('TotalPecStrokes.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
+
+Anova(lmer(StrokesPerTime.sps ~ Speed.group + (1 | Individual), data = pecstrokes))
+
+pecstrokes |> PecStrokesPerTimePlot(pecstrokes)
+ggsave('TotalPecStrokesPerTime.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
+```
+
+## Pec fin angles calculations
+```{r}
+pecvectorangles <- pecfindata |> calcPecFinAngles()
+```
+
+## Now we look for a role for fin side with plots
+```{r}
+pecvectorangles |> PecFinAmplitudePlot()
+ggsave('PecFinAmplitude.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
+```
+
+### And with stats
+```{r}
+slowpecvec <- pecvectorangles |> filter(Speed.group == 'Slow')
+Anova(lmer(pecangle.deg ~ side + (1 | Individual), data = slowpecvec))
+
+fastpecvec <- pecvectorangles |> filter(Speed.group == 'Fast')
+Anova(lmer(pecangle.deg ~ side + (1 | Individual), data = fastpecvec))
+
+insidepecvec <- pecvectorangles |> filter(side == 'Inside')
+Anova(lmer(pecangle.deg ~ Speed.group + (1 | Individual), data = insidepecvec))
+
+outsidepecvec <- pecvectorangles |> filter(side == 'Outside')
+Anova(lmer(pecangle.deg ~ Speed.group + (1 | Individual), data = outsidepecvec))
+
+weirdpecvec1 <- pecvectorangles |> filter(side == 'Inside' & Speed.group == 'Slow')
+weirdpecvec2 <- pecvectorangles |> filter(side == 'Outside' & Speed.group == 'Fast')
+weirdpecvec <- rbind(weirdpecvec1, weirdpecvec2)
+Anova(lmer(pecangle.deg ~ Speed.group + (1 | Individual), data = weirdpecvec))
+```
+
+## What about backing?
+```{r}
+backingdata <- pecvectorangles |> calcNumOfBackingStrokes(90)
+
+backingdata <- PecStrokeCountTime |> 
+  select(ID,totaltime) |> 
+  right_join(backingdata, by = 'ID')
+```
+
+## Now we plot backing data against time
+```{r}
+backingdata.lm <- lm(numberofbackingstrokes ~ totaltime, data = backingdata)
+summary(backingdata.lm)
+
+backingdata |> BackingDataPlot(backingdata.lm)
+ggsave('TotalBackingStrokes.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
+```
+
+### And do the stats
+```{r}
+backingdata |> 
+  filter(Speed.group == 'Slow') |> 
+  summary()
+
+backingdata |> 
+  filter(Speed.group == 'Fast') |> 
+  summary()
+
+Anova(lmer(numberofbackingstrokes ~ Speed.group + (1 | Individual), data = backingdata))
+```
+
+# Momentum
+
+## We estimate momentum
+```{r}
+MoIsummary <- MoIPreTrim |> 
+  select(ID, frame, MoI.gcm2, MaxMoI.gcm2)
+
+angularmomentumdata <- SnoutVelocityDataPreTrim |> calcAngularMomentum(MoIsummary)
+linearmomentumdata <- maindata |> prepLinearMomentum()
+momentumdata <- linearmomentumdata |> right_join(angularmomentumdata, by = c('ID', 'frame'))
+
+momentumdata <- maindata |>
+  group_by(ID) |> 
+  summarise(FullBL = first(FullBL)) |> 
+  right_join(momentumdata, by = 'ID')
+
+normalizedmomentumdata <- momentumdata |> calcLinearMomentum(maindata) |> normalizeMomentum()
+
+turnmomentumdata <- normalizedmomentumdata |> 
+  trimFrames() |> 
+  group_by(ID) |> 
+  mutate(Time = case_when(frame <= max(frame)/2 ~ '1st Half',
+                          frame > max(frame)/2 ~ '2nd Half'))
+
+initialmomentumdata <- normalizedmomentumdata |> calcInitialMomentum()
+
+meantotalmomentumdata  <- turnmomentumdata |> 
+  group_by(ID, Time) |> 
+  summarise(Individual = first(Individual),
+            Speed.group = first(Speed.group),
+            meanmomentum.gnormdegps = mean(momentum.gnormdegps),
+            meanlinearmomentum.gnormcmps = mean(linearmomentum.gnormcmps)) |> 
+  rbind(initialmomentumdata)
+```
+
+## Now we plot
+```{r}
+scaleFUN <- function(x) sprintf("%.1f", x)
+
+meantotalmomentumdata$Time = factor(meantotalmomentumdata$Time, levels=c("Pre", "1st Half", "2nd Half"))
+meantotalmomentumdata$Speed.group = factor(meantotalmomentumdata$Speed.group, levels=c("Slow", "Fast"))
+
+meantotalmomentumdata |> angularmomentumplot('Slow','deepskyblue', -.1, 2)
+ggsave('AngularMomentumSlow.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
+meantotalmomentumdata |> angularmomentumplot('Fast','firebrick', -.1, 3.45) + scale_y_continuous(labels=scaleFUN)
+ggsave('AngularMomentumFast.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
+
+meantotalmomentumdata |> linearmomentumplot('Slow', 'deepskyblue', 0, .03)
+ggsave('LinearMomentumSlow.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
+meantotalmomentumdata |> linearmomentumplot('Fast', 'firebrick', 0, .06)
+ggsave('LinearMomentumFast.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
+```
+
+### And run some stats
+```{r}
+slowmeantotalmomentumdata <- meantotalmomentumdata |> filter(Speed.group == 'Slow')
+Anova(lmer(meanmomentum.gnormdegps ~ Time + (1 | Individual), data  = slowmeantotalmomentumdata))
+Anova(lmer(meanlinearmomentum.gnormcmps ~ Time + (1 | Individual), data  = slowmeantotalmomentumdata))
+
+fastmeantotalmomentumdata <- meantotalmomentumdata |> filter(Speed.group == 'Fast')
+Anova(lmer(meanmomentum.gnormdegps ~ Time + (1 | Individual), data  = fastmeantotalmomentumdata))
+Anova(lmer(meanlinearmomentum.gnormcmps ~ Time + (1 | Individual), data  = fastmeantotalmomentumdata))
+```
+
+#### Linear momentum analysis, just the pre
+```{r}
+premomentumstats <- meantotalmomentumdata |> filter(Time == 'Pre')
+
+premomentumstatsslow <- premomentumstats |> filter(Speed.group == 'Slow')
+mean(premomentumstatsslow$meanlinearmomentum.gnormcmps)
+sd(premomentumstatsslow$meanlinearmomentum.gnormcmps)
+
+premomentumstatsfast <- premomentumstats |> filter(Speed.group == 'Fast')
+mean(premomentumstatsfast$meanlinearmomentum.gnormcmps)
+sd(premomentumstatsfast$meanlinearmomentum.gnormcmps)
+
+Anova(lmer(meanlinearmomentum.gnormcmps ~ Speed.group + (1 | Individual), data  = premomentumstats))
+```
+
+#### Linear momentum analysis, just the 1st half
+```{r}
+firstmomentumstats <- meantotalmomentumdata |> filter(Time == '1st Half')
+
+firstmomentumstatsslow <- firstmomentumstats |> filter(Speed.group == 'Slow')
+mean(firstmomentumstatsslow$meanlinearmomentum.gnormcmps)
+sd(firstmomentumstatsslow$meanlinearmomentum.gnormcmps)
+
+firstmomentumstatsfast <- firstmomentumstats |> filter(Speed.group == 'Fast')
+mean(firstmomentumstatsfast$meanlinearmomentum.gnormcmps)
+sd(firstmomentumstatsfast$meanlinearmomentum.gnormcmps)
+
+Anova(lmer(meanlinearmomentum.gnormcmps ~ Speed.group + (1 | Individual), data  = firstmomentumstats))
+```
+
+#### Linear momentum analysis, just the 2nd half
+```{r}
+secondmomentumstats <- meantotalmomentumdata |> filter(Time == '2nd Half')
+
+secondmomentumstatsslow <- secondmomentumstats |> filter(Speed.group == 'Slow')
+mean(secondmomentumstatsslow$meanlinearmomentum.gnormcmps)
+sd(secondmomentumstatsslow$meanlinearmomentum.gnormcmps)
+
+secondmomentumstatsfast <- secondmomentumstats |> filter(Speed.group == 'Fast')
+mean(secondmomentumstatsfast$meanlinearmomentum.gnormcmps)
+sd(secondmomentumstatsfast$meanlinearmomentum.gnormcmps)
+
+Anova(lmer(meanlinearmomentum.gnormcmps ~ Speed.group + (1 | Individual), data  = secondmomentumstats))
+```
+
+#### Linear momentum analysis, pre vs. first half vs. second half
+```{r}
+preandfirstmomentumstats <- meantotalmomentumdata |> filter(Time == 'Pre' | Time == '1st Half')
+
+preandfirstmomentumstatsslow <- preandfirstmomentumstats |> filter(Speed.group == 'Slow')
+preandfirstmomentumstatsfast <- preandfirstmomentumstats |> filter(Speed.group == 'Fast')
+
+Anova(lmer(meanlinearmomentum.gnormcmps ~ Time + (1 | Individual), data  = preandfirstmomentumstatsfast))
+Anova(lmer(meanlinearmomentum.gnormcmps ~ Time + (1 | Individual), data  = preandfirstmomentumstatsslow))
+
+preandsecondmomentumstats <- meantotalmomentumdata |> filter(Time == 'Pre' | Time == '2nd Half')
+
+preandsecondmomentumstatsslow <- preandsecondmomentumstats |> filter(Speed.group == 'Slow')
+preandsecondmomentumstatsfast <- preandsecondmomentumstats |> filter(Speed.group == 'Fast')
+
+Anova(lmer(meanlinearmomentum.gnormcmps ~ Time + (1 | Individual), data  = preandsecondmomentumstatsfast))
+Anova(lmer(meanlinearmomentum.gnormcmps ~ Time + (1 | Individual), data  = preandsecondmomentumstatsslow))
+
+firstandsecondmomentumstats <- meantotalmomentumdata |> filter(Time == '1st Half' | Time == '2nd Half')
+
+firstandsecondmomentumstatsslow <- firstandsecondmomentumstats |> filter(Speed.group == 'Slow')
+firstandsecondmomentumstatsfast <- firstandsecondmomentumstats |> filter(Speed.group == 'Fast')
+
+Anova(lmer(meanlinearmomentum.gnormcmps ~ Time + (1 | Individual), data  = firstandsecondmomentumstatsfast))
+Anova(lmer(meanlinearmomentum.gnormcmps ~ Time + (1 | Individual), data  = firstandsecondmomentumstatsslow))
+```
+
+#### Angular momentum analysis, pre vs. first half vs. second half
+```{r}
+Anova(lmer(meanmomentum.gnormdegps ~ Time + (1 | Individual), data  = preandfirstmomentumstatsfast))
+Anova(lmer(meanmomentum.gnormdegps ~ Time + (1 | Individual), data  = preandfirstmomentumstatsslow))
+  
+Anova(lmer(meanmomentum.gnormdegps ~ Time + (1 | Individual), data  = preandsecondmomentumstatsfast))
+Anova(lmer(meanmomentum.gnormdegps ~ Time + (1 | Individual), data  = preandsecondmomentumstatsslow))
+
+Anova(lmer(meanmomentum.gnormdegps ~ Time + (1 | Individual), data  = firstandsecondmomentumstatsfast))
+Anova(lmer(meanmomentum.gnormdegps ~ Time + (1 | Individual), data  = firstandsecondmomentumstatsslow))
+```

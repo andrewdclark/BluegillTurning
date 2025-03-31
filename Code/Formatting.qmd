@@ -1,0 +1,113 @@
+---
+title: "Formatting"
+format: pdf
+editor: source
+---
+
+# Libraries and functions
+```{r libraries and functions, message = FALSE}
+library(here)
+here::i_am('Code/Formatting.qmd')
+source(here('Code/Functions/FormattingFunctions.R'))
+importLibraries()
+```
+
+# Global variables
+```{r global variables}
+bodypartorder <- c('Snout','GillCenterLow','PelvFinsCenter','MidPelvAnal','AnalBase',
+                   'MidAnalBasePeduncle','Peduncle')
+
+dt = 1/60
+```
+
+# Data import
+```{r big import, warning = FALSE}
+# Digitized fish data
+maindatapaths <- list.files(here("RawData/IndividualFiles"), pattern = "[.]csv$", full.names = TRUE)
+maindata <- maindatapaths |> map(read.csv) |> list_rbind()
+
+# Segment mass data
+masspaths <- list.files(here("RawData/Mass/"), pattern = "[.]csv$", full.names = TRUE)
+massdata <- masspaths |> map(read.csv) |> list_rbind()
+
+# Calibrated axes data
+axesdata <- read.csv(here("RawData/AxesRotate/CoordinateSystemSLEAP.csv"))
+
+# Data specifying when turning occurred
+turnframes <- read.csv(here("RawData/TurnFrames/TurnFrames.csv"))
+```
+
+# Data format
+```{r}
+# Calculate segment point masses
+massdata <- massdata |> group_by(Individual) |>  calcPointMasses()
+
+# Initial main data formatting
+maindata <- maindata |> formatData(massdata) |> group_by(frame) |> arrange(frame) |> ungroup()
+```
+
+# Axes rotation
+```{r rotate data and select relevant frames, warning = FALSE}
+maindata <- maindata |> 
+  split(maindata$Individual) |> 
+  lapply(rotateData, axesdata = axesdata) |> 
+  list_rbind()
+```
+
+# Smoothing
+## Smooth the data
+```{r butterworth filtered}
+bffast <- signal::butter(9, 8/(60/2), 'low', output='Sos')
+bfslow <- signal::butter(9, 4/(60/2), 'low', output='Sos')
+
+fastData <- maindata |> filter(Speed.BLs == 3.5 | Speed.BLs == 2.5) |> na.omit() |> runXYZButter(bffast)
+slowData <- maindata |> filter(Speed.BLs == 1) |> na.omit() |> runXYZButter(bfslow)
+
+maindata <- fastData |> rbind(slowData) |> MatchTurnFrames(turnframes)
+```
+
+## Visualize the x
+```{r}
+maindata |> split(maindata$ID) |> lapply(ProblemIndPlotX)
+```
+
+## Visualize the y
+```{r}
+maindata |> split(maindata$ID) |> lapply(ProblemIndPlotY)
+```
+
+## Spline along the body
+```{r spline data}
+maindata <- maindata |> SplineSmooth()
+```
+
+## Check for problems in the x
+```{r}
+maindata |> split(maindata$ID) |> lapply(ProblemIndPlotXspl)
+```
+
+## Check for problems in the y
+```{r}
+maindata |> split(maindata$ID) |> lapply(ProblemIndPlotYspl)
+```
+
+## Remove three bad trials
+```{r}
+maindata <- maindata |> filter(ID !='BG63_14_1' & ID != 'BG64_18_6' & ID != 'BG67_9_10')
+```
+
+# Final touchups
+```{r}
+maindata <- maindata |> 
+  group_by(ID) |> 
+  mutate(frame = frame - min(frame + 5),
+         t.sec = frame * dt,
+         Speed.group = case_when(Speed.BLs == 1 ~ 'Slow',
+                                 Speed.BLs == 2.5 ~ 'Fast',
+                                 Speed.BLs == 3.5 ~ 'Fast'))
+```
+
+# Export
+```{r}
+write_csv(maindata, here("ProcessedData/fulldata.csv"))
+```
