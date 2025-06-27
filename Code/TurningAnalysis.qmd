@@ -283,7 +283,9 @@ TurnTimeData.stats <- TurnTimeData |>
           Speed.group = as.character(first(Speed.group))) |> 
   group_by(ID) |>
   mutate(TimeDiff.sec = tminMoI - tmaxT) |>
-  mutate(Individual = substr(ID,1,4))
+  mutate(Individual = substr(ID,1,4)) |> 
+  group_by(Individual) |> 
+  mutate(IndividualNum = cur_group_id())
 
 turntimeslow <- TurnTimeData.stats |> filter(Speed.group == 'Slow')
 turntimefast <- TurnTimeData.stats |> filter(Speed.group == 'Fast')
@@ -293,7 +295,28 @@ sd(turntimeslow$TimeDiff.sec)
 summary(turntimefast$TimeDiff.sec)
 sd(turntimefast$TimeDiff.sec)
 
-Anova(lmer(TimeDiff.sec ~ Speed.group + (1 | Individual), data = TurnTimeData.stats))
+torque_moi_timing_model <- lmer(TimeDiff.sec ~ Speed.group + (1 | IndividualNum), data = TurnTimeData.stats)
+Anova(torque_moi_timing_model)
+```
+
+EDT: Add power analysis
+
+May need to install the "mixedpower" package from GitHub
+```
+if (!require("devtools")) {
+    install.packages("devtools", dependencies = TRUE)}
+devtools::install_github("DejanDraschkow/mixedpower") # mixedpower is hosted on GitHub
+```
+
+```{r}
+library(mixedpower)
+
+power_torque_moi <- mixedpower(torque_moi_timing_model, 
+                               data = TurnTimeData.stats,
+                               fixed_effects = c('Speed.group'),
+                               simvar = 'IndividualNum',
+                               steps = c(3,4,5,6,7,8,10,15,20),
+                               critical_value = 5, n_sim = 100)
 ```
 
 ## Then we look at the timing differences in more detail
