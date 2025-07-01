@@ -11,6 +11,7 @@ editor: source
 library(here)
 here::i_am('Code/TurningAnalysis.qmd')
 source(here('Code/Functions/CalcFunctions.R'))
+library(easystats)
 importLibraries()
 
 bodypartorder <- c('Snout','GillCenterLow','PelvFinsCenter','MidPelvAnal',
@@ -29,6 +30,20 @@ maindata <- read_csv(here("ProcessedData/fulldata.csv")) |>
            'Turn', 'FullBL', 'mass.g', 's0'))
 
 head(maindata)
+```
+
+```{r}
+maindata |> 
+  distinct(Individual)
+```
+
+```{r}
+maindata |> 
+  distinct(Individual, Trial, Turn) |> 
+  group_by(Individual, Trial) |> 
+  summarize(maxturnnum = max(Turn),
+            maxdone = if_else(maxturnnum < 16, 16, maxturnnum),
+            nexcluded = length(setdiff(seq(1,maxdone), Turn)))
 ```
 
 ## How do the traces for a fast vs. a slow turn (respectively) look?
@@ -83,8 +98,11 @@ MaxVelStats <- SnoutVelocityData |>
             maxsnoutvel.degps = max(snoutangle.degps, na.rm = TRUE)) |> 
   mutate(Individual = substr(ID, 1, 4))
 
-Anova(lmer(meansnoutvel.degps ~ Speed.group + (1 | Individual), data = MeanVelStats))
-Anova(lmer(maxsnoutvel.degps ~ Speed.group + (1 | Individual), data = MaxVelStats))
+meansnoutvelmodel <- lmer(meansnoutvel.degps ~ Speed.group + (1 | Individual), data = MeanVelStats)
+Anova(meansnoutvelmodel)
+
+maxsnoutvelmodel <- lmer(maxsnoutvel.degps ~ Speed.group + (1 | Individual), data = MaxVelStats)
+Anova(maxsnoutvelmodel)
 
 MeanVelStatsSlow <- MeanVelStats |> filter(Speed.group == 'Slow')
 MeanVelStatsFast <- MeanVelStats |> filter(Speed.group == 'Fast')
@@ -99,6 +117,14 @@ summary(MaxVelStatsSlow$maxsnoutvel.degps)
 sd(MaxVelStatsSlow$maxsnoutvel.degps, na.rm = TRUE)
 summary(MaxVelStatsFast$maxsnoutvel.degps)
 sd(MaxVelStatsFast$maxsnoutvel.degps, na.rm = TRUE)
+```
+
+```{r}
+check_model(meansnoutvelmodel)
+```
+
+```{r}
+check_model(maxsnoutvelmodel)
 ```
 
 # Moment of Inertia
@@ -162,7 +188,8 @@ sd(MoIslow$minpercMoI)
 summary(MoIfast$minpercMoI)
 sd(MoIfast$minpercMoI)
 
-Anova(lmer(minpercMoI ~ Speed.group + (1 | Individual), data = MoIpercstats))
+minpercMoImodel <- lmer(minpercMoI ~ Speed.group + (1 | Individual), data = MoIpercstats)
+Anova(minpercMoImodel)
 
 summary(MoIslow$meanpercMoI)
 sd(MoIslow$meanpercMoI)
@@ -170,7 +197,16 @@ sd(MoIslow$meanpercMoI)
 summary(MoIfast$meanpercMoI)
 sd(MoIfast$meanpercMoI)
 
-Anova(lmer(meanpercMoI ~ Speed.group + (1 | Individual), data = MoIpercstats))
+meanpercMoImodel <- lmer(meanpercMoI ~ Speed.group + (1 | Individual), data = MoIpercstats)
+Anova(meanpercMoImodel)
+```
+
+```{r}
+check_model(minpercMoImodel)
+```
+
+```{r}
+check_model(meanpercMoImodel)
 ```
 
 ## Now we compare MoI and speed with stats and plots
@@ -244,11 +280,16 @@ summary(TotalSnoutAng.lm)
 Anova(lmer(meansnoutangle.degps ~ meanpercMoI + (1 | Individual), data = MoISnoutAngSlow))
 Anova(lmer(meansnoutangle.degps ~ meanpercMoI + (1 | Individual), data = MoISnoutAngFast))
 
-Anova(lmer(meansnoutangle.degps ~ meanpercMoI*Speed.group + (1 | Individual), data = MeanMoIMeanSnoutAngStats))
+meansnoutanglemodel <- lmer(meansnoutangle.degps ~ meanpercMoI*Speed.group + (1 | Individual), data = MeanMoIMeanSnoutAngStats)
+Anova(meansnoutanglemodel)
+```
+
+```{r check_meansnoutanglemodel}
+check_model(meansnoutanglemodel)
 ```
 
 ## Then we look into the timing of MoI minimization and torque maximization
-```{r}
+```{r torquemoitimingplot}
 TurnTimeData <- torquedata |> 
   select(ID, frame, torque.gcm2ps2, t.sec) |> 
   left_join(MoI, by = c('ID', 'frame', 't.sec'))
@@ -258,7 +299,7 @@ ggsave('MoItorquetiming.jpg', path = here("ProcessedData/Figures/"), width = 6.5
 ```
 
 ### And run the stats
-```{r}
+```{r torquemoitimingstats}
 torquetimingstats <- TurnTimeData |> 
   group_by(ID) |> 
   reframe(tmaxT = t.sec[which.max(torque.gcm2ps2)],
@@ -299,7 +340,11 @@ torque_moi_timing_model <- lmer(TimeDiff.sec ~ Speed.group + (1 | IndividualNum)
 Anova(torque_moi_timing_model)
 ```
 
-EDT: Add power analysis
+```{r checktorquemoitimingmodel}
+check_model(torque_moi_timing_model)
+```
+
+Power analysis
 
 May need to install the "mixedpower" package from GitHub
 ```
@@ -308,7 +353,10 @@ if (!require("devtools")) {
 devtools::install_github("DejanDraschkow/mixedpower") # mixedpower is hosted on GitHub
 ```
 
-```{r}
+```{r torquemoi_power_analysis}
+#| eval: false
+# this block takes a while to run, so don't do it every time we render
+
 library(mixedpower)
 
 power_torque_moi <- mixedpower(torque_moi_timing_model, 
@@ -320,7 +368,7 @@ power_torque_moi <- mixedpower(torque_moi_timing_model,
 ```
 
 ## Then we look at the timing differences in more detail
-```{r}
+```{r torquemoitimingplot2}
 TurnTimeData2 <- TurnTimeData |> 
   group_by(ID) |> 
   reframe(tmaxT = t.sec[which.max(torque.gcm2ps2)],
@@ -335,7 +383,7 @@ ggsave('MoItorquetiming2.jpg', path = here("ProcessedData/Figures/"), width = 5.
 ```
 
 ### And run the stats to compare the time differences to 0
-```{r}
+```{r zerotimediffstats}
 Anova(lmer(TimeDiff.sec ~ Speed.group + (1 | Individual), data = TurnTimeData2))
 
 linmod <- lmer(TimeDiff.sec ~ Speed.group + (1 | Individual), data = TurnTimeData2)
@@ -349,10 +397,14 @@ group_means <- emmeans(linmod, ~ Speed.group)
 contrast(group_means, method = "identity")
 ```
 
+```{r checklinmod}
+check_model(linmod)
+```
+
 # Snout and Tail
 
 ## First we calculate snout and tail angular velocity
-```{r, warning = FALSE}
+```{r snouttailangvel, warning = FALSE}
 TailAngChangeButter <- signal::butter(3, 4/(60/2), 'low')
 taildataPreTrim <- maindata |> calcAngChangeTail() |> runTailAngButter(TailAngChangeButter) |> calcAngVelTail(dt)|> AddBackSpeed(maindata)
 
@@ -368,20 +420,21 @@ SnoutTailAngularVel <- reducedtaildata |> left_join(reducedSnoutVelocityData)
 ```
 
 ## Then we plot a representative trial
-```{r, warning = FALSE}
+```{r snouttailangvelplot, warning = FALSE}
 SnoutTailAngularVel |> filter(ID == 'BG63_14_10') |> 
   select(c(ID, t.sec, tailangle.degps, snoutangle.degps)) |> 
   mutate(tsnoutmax = t.sec[which.max(snoutangle.degps)],
          ttailmax = t.sec[which.max(tailangle.degps)]) |> 
   pivot_longer(cols = c(-ID, -t.sec, -tsnoutmax, -ttailmax))|> 
   SnoutVsTailAngularVelocityPlot()
+
 ggsave('SnoutvTailAngVel1Trial.jpg', path = here("ProcessedData/Figures/"), width = 6.5, height = 2, dpi = 300)
 ```
 
 ## And we look at mins and maxes
 
 First we take only the highest snout and tail velocities for each trial
-```{r}
+```{r snouttailsummary}
 SnoutTailSummary <- SnoutTailAngularVel |> 
   group_by(ID) |> 
   filter(snoutangle.degps == max(snoutangle.degps, na.rm = TRUE) | tailangle.degps == max(tailangle.degps, na.rm = TRUE)) |> 
@@ -391,7 +444,7 @@ SnoutTailSummary <- SnoutTailAngularVel |>
 
 ## Now we plot the maxes
 
-```{r, warning = FALSE, message = FALSE}
+```{r snouttaildotplot, warning = FALSE, message = FALSE}
 SnoutTailDotplot <- SnoutTailSummary |> 
   group_by(ID, t.sec) |> 
   summarise(ID = first(ID),
@@ -411,7 +464,7 @@ ggsave('TailvSnoutAngVel.jpg', path = here("ProcessedData/Figures/"), width = 3.
 ```
 
 ### And run the stats
-```{r}
+```{r snouttailstats}
 snoutfastest <- SnoutTailSummary |> filter(Max == 'Max Snout')
 summary(snoutfastest$snoutangle.degps)
 sd(snoutfastest$snoutangle.degps)
@@ -478,15 +531,25 @@ pecstrokes <- PecStrokeCountTime |> select(ID, totaltime, StrokesPerTime.sps) |>
 
 totalpecstrokes.lm <- lm(TotalPecStrokes ~ totaltime, data = pecstrokes)
 summary(totalpecstrokes.lm)
-Anova(lmer(TotalPecStrokes ~ Speed.group + (1 | Individual), data = pecstrokes))
+totalpecstrokesmodel <- lmer(TotalPecStrokes ~ Speed.group + (1 | Individual), data = pecstrokes)
+Anova(totalpecstrokesmodel)
 
 pecstrokes |> TotalPecStrokesPlot(totalpecstrokes.lm)
 ggsave('TotalPecStrokes.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
 
-Anova(lmer(StrokesPerTime.sps ~ Speed.group + (1 | Individual), data = pecstrokes))
+strokespertimemodel <- lmer(StrokesPerTime.sps ~ Speed.group + (1 | Individual), data = pecstrokes)
+Anova(strokespertimemodel)
 
 pecstrokes |> PecStrokesPerTimePlot(pecstrokes)
 ggsave('TotalPecStrokesPerTime.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
+```
+
+```{r}
+check_model(totalpecstrokesmodel)
+```
+
+```{r}
+check_model(strokespertimemodel)
 ```
 
 ## Pec fin angles calculations
