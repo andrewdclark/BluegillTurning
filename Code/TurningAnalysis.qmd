@@ -48,9 +48,9 @@ maindata |>
 
 ## How do the traces for a fast vs. a slow turn (respectively) look?
 ```{r body traces for a fast vs. slow turn, warning = FALSE}
-maindata %>% bodyTracesPlot('BG63_14_8', 4)+ xlim(c(242,264)) + ylim(c(2495, 2505))
+maindata %>% bodyTracesPlot('BG63_14_8', 4) + scale_x_reverse() + coord_cartesian(xlim = c(264, 242), ylim = c(2495, 2505))
 ggsave('FastTurnBodyTrace.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
-maindata %>% bodyTracesPlot('BG63_17_5', 4) + xlim(c(242,264)) + ylim(c(2495, 2505))
+maindata %>% bodyTracesPlot('BG63_17_5', 4) + scale_x_reverse() + coord_cartesian(xlim = c(242, 264), ylim = c(2495, 2505))
 ggsave('SlowTurnBodyTrace.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
 ```
 
