@@ -39,8 +39,8 @@ calcLinearMomentum <- function(df, massdf){
 
 normalizeMomentum <- function(df){
   df |> 
-  mutate(momentum.gnormdegps = momentum.gdegps/(FullBL^4),
-  linearmomentum.gnormcmps = linearmomentum.gcmps/(FullBL^4)) |> 
+  mutate(momentum.gnormdegps = momentum.gdegps/(indmass.g*FullBL^2),
+  linearmomentum.gnormcmps = linearmomentum.gcmps/(indmass.g*FullBL)) |> 
     select(ID,Individual,Speed.group,frame,t.sec,momentum.gnormdegps,linearmomentum.gnormcmps)
 }
 

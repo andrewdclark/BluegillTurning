@@ -351,7 +351,7 @@ May need to install the "mixedpower" package from GitHub
 if (!require("devtools")) {
     install.packages("devtools", dependencies = TRUE)}
 devtools::install_github("DejanDraschkow/mixedpower") # mixedpower is hosted on GitHub
-```
+```Z
 
 ```{r torquemoi_power_analysis}
 #| eval: false
@@ -656,14 +656,14 @@ scaleFUN <- function(x) sprintf("%.1f", x)
 meantotalmomentumdata$Time = factor(meantotalmomentumdata$Time, levels=c("Pre", "1st Half", "2nd Half"))
 meantotalmomentumdata$Speed.group = factor(meantotalmomentumdata$Speed.group, levels=c("Slow", "Fast"))
 
-meantotalmomentumdata |> angularmomentumplot('Slow','deepskyblue', -.1, 2)
+meantotalmomentumdata |> angularmomentumplot('Slow','deepskyblue', -.1, 2)+ scale_y_continuous(labels=scaleFUN)
 ggsave('AngularMomentumSlow.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
 meantotalmomentumdata |> angularmomentumplot('Fast','firebrick', -.1, 3.45) + scale_y_continuous(labels=scaleFUN)
 ggsave('AngularMomentumFast.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
 
-meantotalmomentumdata |> linearmomentumplot('Slow', 'deepskyblue', 0, .03)
+meantotalmomentumdata |> linearmomentumplot('Slow', 'deepskyblue', 0, .03)+ scale_y_continuous(labels=scaleFUN)
 ggsave('LinearMomentumSlow.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
-meantotalmomentumdata |> linearmomentumplot('Fast', 'firebrick', 0, .06)
+meantotalmomentumdata |> linearmomentumplot('Fast', 'firebrick', 0, .06)+ scale_y_continuous(labels=scaleFUN)
 ggsave('LinearMomentumFast.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
 ```
 
