@@ -87,6 +87,7 @@ SnoutAnglePlot <- function(df) {
     theme_bw() +
     ylab('Snout angle (deg)') +
     xlab('Time (s)') +
+    scale_y_continuous(breaks = seq(0, 180, by = 45)) +
     labs(color = "Turn Speed") +
     scale_color_manual(
       labels = c('Fast', 'Slow'),
@@ -121,7 +122,7 @@ SlowSnoutVelocityPlot <- function(df, meansnoutvel) {
       plot.margin = grid::unit(c(.05, .05, .05, .05), "cm")
     ) +
     xlim(c(-1, 1)) +
-    ylim(c(-250, 800)) +
+    ylim(c(-50, 650)) +
     geom_path(color = 'darkslategray3', size = .25, alpha = .25) +
     geom_path(
       data = meansnoutvel,
@@ -150,7 +151,7 @@ FastSnoutVelocityPlot <- function(df, meansnoutvel) {
       plot.margin = grid::unit(c(.05, .05, .05, .05), "cm")
     ) +
     xlim(c(-1, 1)) +
-    ylim(c(-250, 800)) +
+    ylim(c(-50, 650)) +
     geom_path(color = 'indianred1', size = .25, alpha = .25) +
     geom_path(
       data = meansnoutvel,

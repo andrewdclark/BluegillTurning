@@ -70,18 +70,22 @@ SnoutVelocityData <- SnoutVelocityDataPreTrim |> trimFrames()
 
 ## And we can compare snout angular velocity, first with plots
 ```{r look at how long the turns take, message = FALSE, warning = FALSE}
-SnoutVelocityData |> SnoutAnglePlot()
-ggsave('SnouAngleChangeOverTime.jpg', path = here("ProcessedData/Figures/"), width = 6.5, height = 2, dpi = 300)
+snout_angle_plot <- SnoutVelocityData |> SnoutAnglePlot()
 
 meansnoutvelslow <- SnoutVelocityData |> calcMeanSnoutVelocity('Slow', 1)
 
-SnoutVelocityData |> SlowSnoutVelocityPlot(meansnoutvelslow)
-ggsave('SnouAngleVelocityOverTimeSLOWcentered.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
+snout_ang_veL_slow_plot <- 
+  SnoutVelocityData |> SlowSnoutVelocityPlot(meansnoutvelslow)
 
 meansnoutvelfast <- SnoutVelocityData |> calcMeanSnoutVelocity('Fast', .75)
 
-SnoutVelocityData |> FastSnoutVelocityPlot(meansnoutvelfast)
-ggsave('SnouAngleVelocityOverTimeFASTcentered.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
+snout_ang_veL_fast_plot <- 
+  SnoutVelocityData |> FastSnoutVelocityPlot(meansnoutvelfast)
+
+snout_angle_plot / (snout_ang_veL_fast_plot | snout_ang_veL_slow_plot) +
+  plot_annotation(tag_levels = 'A')
+
+ggsave('SnoutAngularVelocity.pdf', path = here("ProcessedData/Figures/"), width = 6, height = 4, units = 'in')
 ```
 
 ### Then with stats
