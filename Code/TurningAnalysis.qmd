@@ -46,13 +46,6 @@ maindata |>
             nexcluded = length(setdiff(seq(1,maxdone), Turn)))
 ```
 
-## How do the traces for a fast vs. a slow turn (respectively) look?
-```{r body traces for a fast vs. slow turn, warning = FALSE}
-maindata %>% bodyTracesPlot('BG63_14_8', 4) + scale_x_reverse() + coord_cartesian(xlim = c(264, 242), ylim = c(2495, 2505))
-ggsave('FastTurnBodyTrace.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
-maindata %>% bodyTracesPlot('BG63_17_5', 4) + scale_x_reverse() + coord_cartesian(xlim = c(242, 264), ylim = c(2495, 2505))
-ggsave('SlowTurnBodyTrace.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
-```
 
 # Snout Velocity
 
@@ -152,20 +145,51 @@ MoI <- MoIPreTrim |> trimFrames()
 
 MoI <- SnoutVelocityData |> select(ID, frame, snoutangle.degps) |> right_join(MoI, by = c('ID', 'frame'))
 
-meanmoislow <- MoI |> calcMeanMoI('Slow',1)
 ```
 
-## And we plot it
+## Figure with body traces and MoI
+
+### How do the traces for a fast vs. a slow turn (respectively) look?
+
 ```{r}
-MoI |> SlowMoIPlot(meanmoislow)
-ggsave('MoIOverTimeSLOWcentered.jpg', path = here("ProcessedData/Figures/"),
-       width = 3.25, height = 2, dpi = 300)
+set_centered_range <- function(rng, width) {
+  ctr <- (rng[1] + rng[2]) / 2
+  rng <- ctr + c(-width/2, width/2)
+  
+  return(rng)
+}
+```
+
+```{r body traces for a fast vs. slow turn, warning = FALSE}
+fasttrace <- maindata %>% 
+  bodyTracesPlot('BG63_14_8', 4, reverse_x = TRUE) + 
+  scale_color_gradient(low = "#ffeddd", high = "firebrick") +
+  scale_x_continuous(limits = \(x) set_centered_range(range(x), 20))
+
+fasttrace
+
+slowtrace <- maindata %>% 
+  bodyTracesPlot('BG63_17_5', 4, reverse_x = TRUE) + 
+  scale_color_gradient(low = "#d9f1f1", high = "deepskyblue") +
+  scale_x_continuous(limits = \(x) set_centered_range(range(x), 20))
+
+slowtrace
+```
+
+
+```{r}
+meanmoislow <- MoI |> calcMeanMoI('Slow',1)
+slow_moi_plot <- MoI |> SlowMoIPlot(meanmoislow)
 
 meanmoifast <- MoI |> calcMeanMoI('Fast',.75)
 
-MoI |> FastMoIPlot(meanmoifast)
-ggsave('MoIOverTimeFASTcentered.jpg', path = here("ProcessedData/Figures/"),
-       width = 3.25, height = 2, dpi = 300)
+fast_moi_plot <- MoI |> FastMoIPlot(meanmoifast)
+```
+
+Show the combined figure
+```{r}
+(slowtrace | slow_moi_plot) / (fasttrace | fast_moi_plot)
+ggsave('MoI.pdf', path = here("ProcessedData/Figures/"), width = 6.5, height = 4)
 ```
 
 ### And run some stats
@@ -296,10 +320,12 @@ check_model(meansnoutanglemodel)
 ```{r torquemoitimingplot}
 TurnTimeData <- torquedata |> 
   select(ID, frame, torque.gcm2ps2, t.sec) |> 
-  left_join(MoI, by = c('ID', 'frame', 't.sec'))
+  left_join(MoI, by = c('ID', 'frame', 't.sec')) 
 
-TurnTimeData |> TorqueMoITimingPlot()
-ggsave('MoItorquetiming.jpg', path = here("ProcessedData/Figures/"), width = 6.5, height = 4, dpi = 300)
+moitorqueplot1 <- TurnTimeData |> TorqueMoITimingPlot() +
+  coord_fixed() +
+  theme(legend.position = "none")
+moitorqueplot1
 ```
 
 ### And run the stats
@@ -353,9 +379,10 @@ Power analysis
 May need to install the "mixedpower" package from GitHub
 ```
 if (!require("devtools")) {
-    install.packages("devtools", dependencies = TRUE)}
+    install.packages("devtools", dependencies = TRUE)
+}
 devtools::install_github("DejanDraschkow/mixedpower") # mixedpower is hosted on GitHub
-```Z
+```
 
 ```{r torquemoi_power_analysis}
 #| eval: false
@@ -377,14 +404,70 @@ TurnTimeData2 <- TurnTimeData |>
   group_by(ID) |> 
   reframe(tmaxT = t.sec[which.max(torque.gcm2ps2)],
           tminMoI = t.sec[which.min(MoI.gcm2)],
+          maxangvel.degps = max(snoutangle.degps, na.rm = TRUE),
           Speed.group = as.character(first(Speed.group))) |> 
   group_by(ID) |>
   mutate(TimeDiff.sec = tmaxT - tminMoI) |>
   mutate(Individual = substr(ID,1,4))
 
-TurnTimeData2 |> TorqueMoITimingPlot2()
-ggsave('MoItorquetiming2.jpg', path = here("ProcessedData/Figures/"), width = 5.4, height = 2, dpi = 300)
+moitorqueplot2 <- TurnTimeData2 |> TorqueMoITimingPlot2()
+moitorqueplot2
 ```
+
+
+
+```{r}
+angvel_timediff_model <- lmer(maxangvel.degps ~ TimeDiff.sec + (1 | Individual), data = TurnTimeData2)
+Anova(angvel_timediff_model)
+
+```
+```{r}
+library(marginaleffects)
+```
+
+```{r}
+angvel_timediff_pred <- predictions(
+  angvel_timediff_model,
+  newdata = datagrid(Individual = NA,
+                     TimeDiff.sec = seq(-1, 0.9, by = 0.1)),
+  re.form=NA)
+
+angvel_timediff_plot <-
+  angvel_timediff_pred |> 
+  ggplot(aes(x = TimeDiff.sec, y = estimate,
+             ymin = conf.low, ymax = conf.high)) +
+  geom_ribbon(alpha = 0.2) +
+  geom_line() +
+  geom_point(data = TurnTimeData2, 
+             inherit.aes = FALSE,
+             aes(x = TimeDiff.sec, y = maxangvel.degps, 
+                 color = Speed.group, shape = Speed.group)) +
+  scale_color_manual(values = c('firebrick', 'deepskyblue')) +
+    scale_shape_manual(values = c(2, 19)) +
+  theme_classic() +
+  theme(
+    legend.position = 'none',
+    axis.text = element_text(size = 8),
+    axis.title = element_text(size = 8, face = "bold"),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(.25, "cm"),
+    plot.margin = grid::unit(c(.05, .05, .05, .05), "cm")
+  ) +
+  labs(color = 'Turn Speed') +
+  xlab('Time difference (s)') +
+  ylab('Maximum angular\nvelocity (deg s-1)') +
+  xlim(-1,1)
+  
+angvel_timediff_plot
+```
+
+```{r}
+(moitorqueplot1 | moitorqueplot2 | angvel_timediff_plot) +
+  plot_layout(widths = 1) +
+  plot_annotation(tag_levels = 'A')
+ggsave(here('ProcessedData','Figures','MoiTorqueTiming.pdf'), width = 6.5, height = 2.2, units = 'in')
+```
+
 
 ### And run the stats to compare the time differences to 0
 ```{r zerotimediffstats}
@@ -429,10 +512,24 @@ SnoutTailAngularVel |> filter(ID == 'BG63_14_10') |>
   select(c(ID, t.sec, tailangle.degps, snoutangle.degps)) |> 
   mutate(tsnoutmax = t.sec[which.max(snoutangle.degps)],
          ttailmax = t.sec[which.max(tailangle.degps)]) |> 
+  glimpse() |> 
   pivot_longer(cols = c(-ID, -t.sec, -tsnoutmax, -ttailmax))|> 
   SnoutVsTailAngularVelocityPlot()
 
 ggsave('SnoutvTailAngVel1Trial.jpg', path = here("ProcessedData/Figures/"), width = 6.5, height = 2, dpi = 300)
+```
+
+
+```{r}
+tsnoutmax <- 0.516666666666
+ttailmax <- 0.68333333333
+
+maindata |> 
+  filter(ID == 'BG63_14_10') |> 
+  filter(near(t.sec, tsnoutmax, tol = 2/60) |
+           near(t.sec, ttailmax, tol = 2/60)) |> 
+  ggplot(aes(xs.cm, ys.cm)) +
+  geom_path(aes(group = frame))
 ```
 
 ## And we look at mins and maxes

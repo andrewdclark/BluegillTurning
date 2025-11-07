@@ -1,6 +1,19 @@
-bodyTracesPlot <- function(df, id, frms) {
+bodyTracesPlot <- function(df, id, frms, reverse_x = TRUE) {
   df <- df |>
     filter(ID == id)
+
+  if (reverse_x) {
+    df <- df |>
+      mutate(xs.cm = -xs.cm)
+  }
+  nfr <- df |>
+    group_by(frame) |>
+    summarize(good = all(!is.na(xs.cm)), t.sec = first(t.sec)) |>
+    ungroup() |>
+    summarize(nfr = n(), dur = max(t.sec) - min(t.sec))
+
+  cli::cli_alert_info("Number of frames for {id}: {nfr$nfr}")
+  cli::cli_alert_info("Total duration for {id}: {nfr$dur}")
 
   df %>%
     ungroup() %>%
@@ -9,20 +22,26 @@ bodyTracesPlot <- function(df, id, frms) {
     ggplot(aes(x = xs.cm, y = ys.cm, color = t.sec, group = frame)) +
     geom_path(size = .5) +
     scale_colour_gradient(low = "gray", high = "black") +
-    theme_void() +
-    geom_point(aes(x = xs.cm, y = ys.cm), size = 1) +
+    # geom_point(aes(x = xs.cm, y = ys.cm), size = 1) +
     geom_point(
       data = ~ filter(.x, bodypart == 'Snout'),
       color = 'orange',
       size = 1
     ) +
-    geom_point(
-      data = ~ filter(.x, bodypart == 'Peduncle'),
-      color = 'purple',
-      size = 1
+    # geom_point(
+    #   data = ~ filter(.x, bodypart == 'Peduncle'),
+    #   color = 'purple',
+    #   size = 1
+    # ) +
+    annotation_scale(
+      plot_unit = 'cm',
+      height = unit(2, "pt"),
+      bar_cols = c('black'),
+      text_cex = .6
     ) +
     xlab('X position') +
     ylab('Y position') +
+    theme_void() +
     theme(
       axis.text = element_blank(),
       axis.title = element_blank(),
@@ -33,12 +52,6 @@ bodyTracesPlot <- function(df, id, frms) {
       axis.ticks.length = unit(0, "pt")
     ) +
     coord_fixed() +
-    annotation_scale(
-      plot_unit = 'cm',
-      height = unit(0.025, "cm"),
-      bar_cols = c('black'),
-      text_cex = .6
-    ) +
     labs(color = 'Time (s)')
 }
 
@@ -359,8 +372,8 @@ TorqueMoITimingPlot <- function(df) {
       fill = "goldenrod",
       alpha = .2
     ) +
-    xlab('Time of minimum Moment of Inertia (s)') +
-    ylab('Time of maximum Torque (s)') +
+    xlab('Time of minimum\nmoment of inertia (s)') +
+    ylab('Time of maximum\ntorque (s)') +
     theme(
       axis.text = element_text(size = 10),
       axis.title = element_text(size = 10, face = "bold"),
