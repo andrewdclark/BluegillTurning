@@ -12,7 +12,16 @@ library(here)
 here::i_am('Code/TurningAnalysis.qmd')
 source(here('Code/Functions/CalcFunctions.R'))
 library(easystats)
+
+library(conflicted)
+conflicts_prefer(dplyr::select)
+conflicts_prefer(dplyr::filter)
+conflicts_prefer(dplyr::lag)
+
 importLibraries()
+
+library(GGally)
+library(multcomp)
 
 bodypartorder <- c('Snout','GillCenterLow','PelvFinsCenter','MidPelvAnal',
                    'AnalBase','MidAnalBasePeduncle','Peduncle')
@@ -56,7 +65,11 @@ We do this by calculating the change in angle, then the change in the change in 
 ```{r look at snout velocity, message = FALSE}
 SnoutAngChangeButter <- signal::butter(3, 4/(60/2), 'low')
 
-SnoutVelocityDataPreTrim <- maindata |> calcAngChange() |> runSnoutAngButter(SnoutAngChangeButter) |> calcAngVel(dt)|> AddBackSpeed(maindata) 
+SnoutVelocityDataPreTrim <- maindata |> 
+  calcAngChange() |> 
+  runSnoutAngButter(SnoutAngChangeButter) |> 
+  calcAngVel(dt) |>
+  AddBackSpeed(maindata) 
 
 SnoutVelocityData <- SnoutVelocityDataPreTrim |> trimFrames()
 ```
@@ -422,22 +435,12 @@ Anova(angvel_timediff_model)
 
 ```
 ```{r}
-library(marginaleffects)
-```
-
-```{r}
-angvel_timediff_pred <- predictions(
-  angvel_timediff_model,
-  newdata = datagrid(Individual = NA,
-                     TimeDiff.sec = seq(-1, 0.9, by = 0.1)),
-  re.form=NA)
-
 angvel_timediff_plot <-
-  angvel_timediff_pred |> 
-  ggplot(aes(x = TimeDiff.sec, y = estimate,
-             ymin = conf.low, ymax = conf.high)) +
-  geom_ribbon(alpha = 0.2) +
-  geom_line() +
+  plot(estimate_expectation(angvel_timediff_model, data = "grid")) +
+  # ggplot(aes(x = TimeDiff.sec, y = estimate,
+  #            ymin = conf.low, ymax = conf.high)) +
+  # geom_ribbon(alpha = 0.2) +
+  # geom_line() +
   geom_point(data = TurnTimeData2, 
              inherit.aes = FALSE,
              aes(x = TimeDiff.sec, y = maxangvel.degps, 
@@ -459,6 +462,11 @@ angvel_timediff_plot <-
   xlim(-1,1)
   
 angvel_timediff_plot
+```
+
+
+```{r}
+plot(estimate_grouplevel(angvel_timediff_model))
 ```
 
 ```{r}
@@ -493,7 +501,11 @@ check_model(linmod)
 ## First we calculate snout and tail angular velocity
 ```{r snouttailangvel, warning = FALSE}
 TailAngChangeButter <- signal::butter(3, 4/(60/2), 'low')
-taildataPreTrim <- maindata |> calcAngChangeTail() |> runTailAngButter(TailAngChangeButter) |> calcAngVelTail(dt)|> AddBackSpeed(maindata)
+taildataPreTrim <- maindata |> 
+  calcAngChangeTail() |> 
+  runTailAngButter(TailAngChangeButter) |> 
+  calcAngVelTail(dt)|> 
+  AddBackSpeed(maindata)
 
 taildata <- taildataPreTrim |> trimFrames()
 
@@ -508,17 +520,18 @@ SnoutTailAngularVel <- reducedtaildata |> left_join(reducedSnoutVelocityData)
 
 ## Then we plot a representative trial
 ```{r snouttailangvelplot, warning = FALSE}
-SnoutTailAngularVel |> filter(ID == 'BG63_14_10') |> 
+snouttailangvel_plot <-
+  SnoutTailAngularVel |> filter(ID == 'BG63_14_10') |> 
   select(c(ID, t.sec, tailangle.degps, snoutangle.degps)) |> 
   mutate(tsnoutmax = t.sec[which.max(snoutangle.degps)],
          ttailmax = t.sec[which.max(tailangle.degps)]) |> 
   glimpse() |> 
   pivot_longer(cols = c(-ID, -t.sec, -tsnoutmax, -ttailmax))|> 
-  SnoutVsTailAngularVelocityPlot()
+  SnoutVsTailAngularVelocityPlot() +
+  theme(legend.position = 'none')
 
-ggsave('SnoutvTailAngVel1Trial.jpg', path = here("ProcessedData/Figures/"), width = 6.5, height = 2, dpi = 300)
+snouttailangvel_plot
 ```
-
 
 ```{r}
 tsnoutmax <- 0.516666666666
@@ -526,11 +539,28 @@ ttailmax <- 0.68333333333
 
 maindata |> 
   filter(ID == 'BG63_14_10') |> 
-  filter(near(t.sec, tsnoutmax, tol = 2/60) |
-           near(t.sec, ttailmax, tol = 2/60)) |> 
-  ggplot(aes(xs.cm, ys.cm)) +
-  geom_path(aes(group = frame))
+  filter(near(t.sec, tsnoutmax, tol = 1/60) |
+           near(t.sec, ttailmax, tol = 1/60)) |> 
+  distinct(frame)
+
+angvelmidlines_plot <- 
+  maindata |> 
+  filter(ID == 'BG63_14_10') |> 
+  filter(near(t.sec, tsnoutmax, tol = 1/60) |
+           near(t.sec, ttailmax, tol = 1/60)) |> 
+  ggplot(aes(xs.cm, ys.cm, color = factor(frame))) +
+  geom_path(aes(group = frame)) +
+  geom_point(data = ~ filter(.x, 
+                             bodypart == "Snout")) +
+  coord_fixed() +
+  scale_x_reverse() +
+  theme_void() +
+  theme(legend.position = "none")  
+
+angvelmidlines_plot
+
 ```
+
 
 ## And we look at mins and maxes
 
@@ -557,11 +587,22 @@ SnoutTailDotplot <- SnoutTailSummary |>
                names_to = 'Bodypart',
                values_to = 'AngularVelocity')
 
-SnoutTailDotplot |> SnoutTailComp('Max Snout')
-ggsave('SnoutvTailAngVel.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
+SnoutvTailAngVel_plot <- SnoutTailDotplot |> SnoutTailComp('Max Snout')
+SnoutvTailAngVel_plot
 
-SnoutTailDotplot |> SnoutTailComp('Max Tail')
-ggsave('TailvSnoutAngVel.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
+TailvSnoutAngVel_plot <- SnoutTailDotplot |> SnoutTailComp('Max Tail')
+TailvSnoutAngVel_plot
+```
+
+```{r}
+snouttailangvel_plot + 
+  SnoutvTailAngVel_plot + 
+  TailvSnoutAngVel_plot +
+  plot_layout(nrow = 3) +
+  plot_annotation(tag_levels = 'A')
+
+ggsave(here('ProcessedData', 'Figures', 'SnoutTailAngleVel.pdf'),
+       width = 2.5, height = 4, units = 'in')
 ```
 
 ### And run the stats
@@ -736,8 +777,12 @@ normalizedmomentumdata <- momentumdata |> calcLinearMomentum(maindata) |> normal
 turnmomentumdata <- normalizedmomentumdata |> 
   trimFrames() |> 
   group_by(ID) |> 
-  mutate(Time = case_when(frame <= max(frame)/2 ~ '1st Half',
-                          frame > max(frame)/2 ~ '2nd Half'))
+  mutate(maxframe = max(frame, na.rm = TRUE),
+    # Time = case_when(frame <= maxframe/2 ~ '1st Half',
+    #                       frame > maxframe/2 ~ '2nd Half'),
+         Time = case_when(frame <= maxframe/3 ~ '1',
+                           between(frame, maxframe/3, maxframe*2/3)  ~  '2',
+                          frame > maxframe*2/3 ~ '3'))
 
 initialmomentumdata <- normalizedmomentumdata |> calcInitialMomentum()
 
@@ -749,12 +794,16 @@ meantotalmomentumdata  <- turnmomentumdata |>
             meanlinearmomentum.gnormcmps = mean(linearmomentum.gnormcmps)) |> 
   rbind(initialmomentumdata)
 ```
+```{r}
+meantotalmomentumdata
+```
 
 ## Now we plot
 ```{r}
 scaleFUN <- function(x) sprintf("%.1f", x)
 
-meantotalmomentumdata$Time = factor(meantotalmomentumdata$Time, levels=c("Pre", "1st Half", "2nd Half"))
+# meantotalmomentumdata$Time = factor(meantotalmomentumdata$Time, levels=c("Pre", "1st Half", "2nd Half"))
+meantotalmomentumdata$Time = factor(meantotalmomentumdata$Time, levels=c("Pre", "1", "2", "3"))
 meantotalmomentumdata$Speed.group = factor(meantotalmomentumdata$Speed.group, levels=c("Slow", "Fast"))
 
 meantotalmomentumdata |> angularmomentumplot('Slow','deepskyblue', -.1, 2)+ scale_y_continuous(labels=scaleFUN)
@@ -768,97 +817,226 @@ meantotalmomentumdata |> linearmomentumplot('Fast', 'firebrick', 0, .06)+ scale_
 ggsave('LinearMomentumFast.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
 ```
 
-### And run some stats
-```{r}
-slowmeantotalmomentumdata <- meantotalmomentumdata |> filter(Speed.group == 'Slow')
-Anova(lmer(meanmomentum.gnormdegps ~ Time + (1 | Individual), data  = slowmeantotalmomentumdata))
-Anova(lmer(meanlinearmomentum.gnormcmps ~ Time + (1 | Individual), data  = slowmeantotalmomentumdata))
+## Put together the momentum plots
 
-fastmeantotalmomentumdata <- meantotalmomentumdata |> filter(Speed.group == 'Fast')
-Anova(lmer(meanmomentum.gnormdegps ~ Time + (1 | Individual), data  = fastmeantotalmomentumdata))
-Anova(lmer(meanlinearmomentum.gnormcmps ~ Time + (1 | Individual), data  = fastmeantotalmomentumdata))
+```{r}
+angmom.plot <- meantotalmomentumdata |> 
+  group_by(ID) |> 
+  ggplot(aes(x = Time, y = meanmomentum.gnormdegps, 
+             color=Speed.group)) +
+  geom_line(aes(group=ID),
+            alpha=0.2) +
+  stat_eye(mapping = aes(shape = Speed.group),
+           point_interval = "mean_qi") +
+  facet_grid(cols = vars(Speed.group)) +
+  scale_shape_manual(values = c(3, 3)) +
+  scale_color_manual(values = c('deepskyblue', 'firebrick')) +
+  labs(y = 'Angular momentum\n(norm)')
+
+
+linmom.plot <- meantotalmomentumdata |> 
+  group_by(ID) |> 
+  ggplot(aes(x = Time, y = meanlinearmomentum.gnormcmps, 
+             color=Speed.group)) +
+  geom_line(aes(group=ID),
+            alpha=0.2) +
+  stat_eye(mapping = aes(shape = Speed.group),
+           point_interval = "mean_hdi") +
+  facet_grid(cols = vars(Speed.group)) +
+  scale_shape_manual(values = c(3, 3)) +
+  scale_color_manual(values = c('deepskyblue', 'firebrick')) +
+  labs(y = 'Linear momentum\n(norm)')
+
+(angmom.plot / linmom.plot) & 
+  (theme_classic() +
+     theme(legend.position = 'none',
+           strip.text.x = element_blank()))
 ```
 
-#### Linear momentum analysis, just the pre
+## Set up to compare momentum
+
 ```{r}
-premomentumstats <- meantotalmomentumdata |> filter(Time == 'Pre')
-
-premomentumstatsslow <- premomentumstats |> filter(Speed.group == 'Slow')
-mean(premomentumstatsslow$meanlinearmomentum.gnormcmps)
-sd(premomentumstatsslow$meanlinearmomentum.gnormcmps)
-
-premomentumstatsfast <- premomentumstats |> filter(Speed.group == 'Fast')
-mean(premomentumstatsfast$meanlinearmomentum.gnormcmps)
-sd(premomentumstatsfast$meanlinearmomentum.gnormcmps)
-
-Anova(lmer(meanlinearmomentum.gnormcmps ~ Speed.group + (1 | Individual), data  = premomentumstats))
+meantotalmomentumwide <-
+  meantotalmomentumdata |> 
+  rename(linmom.norm=meanlinearmomentum.gnormcmps,
+         angmom.norm=meanmomentum.gnormdegps) |> 
+  group_by(ID) |> 
+  mutate(is_mom_decrease = linmom.norm[Time == '1'] <
+           linmom.norm[Time == 'Pre']) |> 
+  arrange(ID, Time, Speed.group) |> 
+  pivot_wider(names_from = "Time",
+              values_from = c(linmom.norm, angmom.norm)) |> 
+  mutate(linmom.d1p = linmom.norm_1 - linmom.norm_Pre,
+         linmom.d21 = linmom.norm_2 - linmom.norm_1,
+         linmom.d32 = linmom.norm_3 - linmom.norm_2,
+         angmom.d1p = angmom.norm_1 - angmom.norm_Pre,
+         angmom.d2p = angmom.norm_2 - angmom.norm_Pre,
+         angmom.d21 = angmom.norm_2 - angmom.norm_1,
+         angmom.d32 = angmom.norm_3 - angmom.norm_2)
 ```
 
-#### Linear momentum analysis, just the 1st half
 ```{r}
-firstmomentumstats <- meantotalmomentumdata |> filter(Time == '1st Half')
-
-firstmomentumstatsslow <- firstmomentumstats |> filter(Speed.group == 'Slow')
-mean(firstmomentumstatsslow$meanlinearmomentum.gnormcmps)
-sd(firstmomentumstatsslow$meanlinearmomentum.gnormcmps)
-
-firstmomentumstatsfast <- firstmomentumstats |> filter(Speed.group == 'Fast')
-mean(firstmomentumstatsfast$meanlinearmomentum.gnormcmps)
-sd(firstmomentumstatsfast$meanlinearmomentum.gnormcmps)
-
-Anova(lmer(meanlinearmomentum.gnormcmps ~ Speed.group + (1 | Individual), data  = firstmomentumstats))
+meantotalmomentumwide |> 
+  ggduo(columnsX = c("linmom.norm_Pre",
+                     "linmom.norm_1",
+                      "linmom.d1p",
+                      "linmom.d21"
+                      ),
+        columnsY = c("angmom.norm_1",
+                     "angmom.d2p",
+                     "angmom.d21",
+                      "angmom.d32",
+                     "linmom.d21",
+                      "linmom.d32"
+                      ),
+          mapping = aes(color = Speed.group), #, shape = is_mom_decrease),
+          progress=FALSE,
+          legend = c(4, 2),
+        types = list(continuous = wrap("smooth_lm"))) +
+  geom_hline(yintercept=0) +
+  geom_vline(xintercept=0)
+  # scale_shape_manual(values = c(2, 19))
 ```
 
-#### Linear momentum analysis, just the 2nd half
+## Plot the tradeoff in linear and angular momentum
+
 ```{r}
-secondmomentumstats <- meantotalmomentumdata |> filter(Time == '2nd Half')
-
-secondmomentumstatsslow <- secondmomentumstats |> filter(Speed.group == 'Slow')
-mean(secondmomentumstatsslow$meanlinearmomentum.gnormcmps)
-sd(secondmomentumstatsslow$meanlinearmomentum.gnormcmps)
-
-secondmomentumstatsfast <- secondmomentumstats |> filter(Speed.group == 'Fast')
-mean(secondmomentumstatsfast$meanlinearmomentum.gnormcmps)
-sd(secondmomentumstatsfast$meanlinearmomentum.gnormcmps)
-
-Anova(lmer(meanlinearmomentum.gnormcmps ~ Speed.group + (1 | Individual), data  = secondmomentumstats))
+tradeoff.plot <-
+  meantotalmomentumwide |> 
+  ggplot(aes(x = linmom.norm_Pre, y = angmom.d21, color = Speed.group)) +
+  geom_point(aes(shape = Speed.group)) +
+  geom_smooth(method = 'lm') +
+  scale_color_manual(values = c('deepskyblue', 'firebrick')) +
+  scale_shape_manual(values = c(2, 19)) +
+  labs(x = 'Linear momentum (Pre)',
+       y = 'Change in angular momentum\n(Time 2 - Time 1)') +
+  theme_classic() +
+  theme(legend.position = 'none')
 ```
 
-#### Linear momentum analysis, pre vs. first half vs. second half
+And put the entire plot together
+
 ```{r}
-preandfirstmomentumstats <- meantotalmomentumdata |> filter(Time == 'Pre' | Time == '1st Half')
+((angmom.plot / linmom.plot) | tradeoff.plot) & 
+  (theme_classic() +
+     theme(legend.position = 'none',
+           strip.text.x = element_blank()))
 
-preandfirstmomentumstatsslow <- preandfirstmomentumstats |> filter(Speed.group == 'Slow')
-preandfirstmomentumstatsfast <- preandfirstmomentumstats |> filter(Speed.group == 'Fast')
-
-Anova(lmer(meanlinearmomentum.gnormcmps ~ Time + (1 | Individual), data  = preandfirstmomentumstatsfast))
-Anova(lmer(meanlinearmomentum.gnormcmps ~ Time + (1 | Individual), data  = preandfirstmomentumstatsslow))
-
-preandsecondmomentumstats <- meantotalmomentumdata |> filter(Time == 'Pre' | Time == '2nd Half')
-
-preandsecondmomentumstatsslow <- preandsecondmomentumstats |> filter(Speed.group == 'Slow')
-preandsecondmomentumstatsfast <- preandsecondmomentumstats |> filter(Speed.group == 'Fast')
-
-Anova(lmer(meanlinearmomentum.gnormcmps ~ Time + (1 | Individual), data  = preandsecondmomentumstatsfast))
-Anova(lmer(meanlinearmomentum.gnormcmps ~ Time + (1 | Individual), data  = preandsecondmomentumstatsslow))
-
-firstandsecondmomentumstats <- meantotalmomentumdata |> filter(Time == '1st Half' | Time == '2nd Half')
-
-firstandsecondmomentumstatsslow <- firstandsecondmomentumstats |> filter(Speed.group == 'Slow')
-firstandsecondmomentumstatsfast <- firstandsecondmomentumstats |> filter(Speed.group == 'Fast')
-
-Anova(lmer(meanlinearmomentum.gnormcmps ~ Time + (1 | Individual), data  = firstandsecondmomentumstatsfast))
-Anova(lmer(meanlinearmomentum.gnormcmps ~ Time + (1 | Individual), data  = firstandsecondmomentumstatsslow))
+ggsave(here('ProcessedData','Figures','momentum-tradeoff.pdf'),
+       width = 6.5, height = 3, units = 'in')
 ```
 
-#### Angular momentum analysis, pre vs. first half vs. second half
-```{r}
-Anova(lmer(meanmomentum.gnormdegps ~ Time + (1 | Individual), data  = preandfirstmomentumstatsfast))
-Anova(lmer(meanmomentum.gnormdegps ~ Time + (1 | Individual), data  = preandfirstmomentumstatsslow))
-  
-Anova(lmer(meanmomentum.gnormdegps ~ Time + (1 | Individual), data  = preandsecondmomentumstatsfast))
-Anova(lmer(meanmomentum.gnormdegps ~ Time + (1 | Individual), data  = preandsecondmomentumstatsslow))
 
-Anova(lmer(meanmomentum.gnormdegps ~ Time + (1 | Individual), data  = firstandsecondmomentumstatsfast))
-Anova(lmer(meanmomentum.gnormdegps ~ Time + (1 | Individual), data  = firstandsecondmomentumstatsslow))
+### Momentum stats
+
+Make a long data frame so that we can easily run the same tests on linear and angular momentum
+
+```{r}
+meantotalmomentumlong <-
+  meantotalmomentumdata |> 
+  rename(angularmomentum.gnormdegps = meanmomentum.gnormdegps,
+         linearmomentum.gnormcmps = meanlinearmomentum.gnormcmps) |> 
+  ungroup() |> 
+  pivot_longer(cols = c(angularmomentum.gnormdegps, linearmomentum.gnormcmps),
+               values_to = "momentum",
+               names_to = "type") |> 
+  mutate(type = case_match(type, 
+                           "angularmomentum.gnormdegps" ~ "angular",
+                           "linearmomentum.gnormcmps" ~ "linear"))
 ```
+
+This runs the comparison of momentum relative to time for slow vs fast turns and for linear and angular momentum.
+```{r}
+momentumstats <-
+  meantotalmomentumlong |> 
+  group_by(Speed.group, type) |> 
+  nest(data = c(momentum,
+                Time, Individual, ID)) |> 
+  # make all of the stats models
+  mutate(momentum.model = 
+           purrr::map(data, 
+                      \(df) lmer(momentum ~ Time + (1 | Individual),
+                                 data = df)),
+         momentum.anova = purrr::map(
+           momentum.model, \(mod) broom::tidy(Anova(mod)))
+  ) |> 
+  # get the overall p values
+  unnest(momentum.anova) |> 
+  # pull out the contrasts
+  mutate(contrasts = 
+           purrr::map(momentum.model,
+                      \(model) estimate_contrasts(model, 
+                                                  contrast = "Time",
+                                                  p_adjust = 'sidak'))
+  ) |> 
+  # and the compact letter displays for comparisons
+  mutate(cld = 
+           purrr::map(momentum.model,
+                      \(model) cld(emmeans(model, specs = ~ Time))))
+
+momentumstats
+```
+
+
+### Show the contrasts
+
+```{r}
+momentumstats |> 
+  unnest(contrasts, names_sep = '.') |> 
+  dplyr::rename(Speed = Speed.group) |> 
+  dplyr::select(Speed, type, p.value, contains("Level"),
+         contrasts.Difference, contrasts.p) |> 
+  dplyr::rename(L1 = contrasts.Level1,
+                L2 = contrasts.Level2,
+                diff = contrasts.Difference) |> 
+  mutate(sigcont = contrasts.p < 0.01) |> 
+  relocate(sigcont, .after=L2)
+```
+
+### Show the CLDs
+
+```{r}
+momentumstats |> 
+  unnest(cld, names_sep = '.') |> 
+  rename(Speed = Speed.group,
+         group = cld..group,
+         Time = cld.Time) |> 
+  dplyr::select(Speed, type, p.value, Time, group) |> 
+  arrange(Speed, type, Time)
+
+```
+
+### Compare pre momentum
+
+```{r}
+meantotalmomentumlong |> 
+  filter(Time == "Pre") |> 
+  group_by(type) |> 
+  nest(data = c(momentum, Speed.group,
+                Time, Individual, ID)) |> 
+  mutate(momentum.model = 
+           purrr::map(data, 
+                      \(df) lmer(momentum ~ Speed.group + (1 | Individual),
+                                 data = df)),
+         momentum.anova = purrr::map(
+           momentum.model, \(mod) broom::tidy(Anova(mod)))
+  ) |> 
+  unnest(momentum.anova)
+```
+
+```{r}
+meantotalmomentumwide |> 
+  group_by(Speed.group) |> 
+  dplyr::select(Individual, ID, Speed.group,
+                linmom.norm_Pre, angmom.d21) |> 
+  nest(data = c(Individual, ID, linmom.norm_Pre, angmom.d21)) |> 
+  mutate(regr.model = 
+           purrr::map(data, 
+                      \(df) lmer(angmom.d21 ~ linmom.norm_Pre + (1 | Individual),
+                                 data = df)),
+         momentum.anova = purrr::map(
+           regr.model, \(mod) broom::tidy(Anova(mod)))
+  ) |> 
+  unnest(momentum.anova)
+```
+

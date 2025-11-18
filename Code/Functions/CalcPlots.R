@@ -73,10 +73,10 @@ SnoutVsTailAngularVelocityPlot <- function(df) {
     ) +
     theme(
       # axis.text = element_text(8),
-      # # axis.title=element_text(size=8,face="bold"),
+      # # axis.title = element_text(size = 8, face = "bold"),
       # legend.title = element_text(size = 8),
       # legend.text = element_text(size = 8),
-      legend.key.size = unit(.75, "cm"),
+      # legend.key.size = unit(.75, "cm"),
       legend.position = 'right',
       plot.margin = grid::unit(c(.05, .05, .05, .05), "cm")
     ) +
