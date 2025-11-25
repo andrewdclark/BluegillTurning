@@ -304,7 +304,7 @@ MeanMoiMeanSnoutAngVelPlot <- function(
       size = 1,
       color = 'deepskyblue'
     ) +
-    ylab('Mean Snout Angular Velocity (deg/s)') +
+    ylab('Mean Snout Angular\nVelocity (deg/s)') +
     xlab('Mean Normalized MoI (%)') +
     scale_color_manual(
       labels = c('Fast', 'Slow'),
@@ -336,7 +336,7 @@ MoISnoutVelTimingPlot <- function(df) {
     xlim(c(0, 2.7)) +
     ylim(c(0, 2.7)) +
     xlab('Time of minimum Moment of Inertia (s)') +
-    ylab('Time of maximum Angular Velocity (s)') +
+    ylab('Time of maximum\nAngular Velocity (s)') +
     theme(
       axis.text = element_text(size = 10),
       axis.title = element_text(size = 10, face = "bold"),
@@ -435,7 +435,7 @@ TotalPecStrokesPlot <- function(df, totalpecstrokes.lm) {
       color = 'black'
     ) +
     xlab('Total time of turn (s)') +
-    ylab('Number of pectoral fin strokes') +
+    ylab('Number of pectoral\nfin strokes') +
     theme(
       axis.text = element_text(size = 8),
       axis.title = element_text(size = 8, face = "bold"),
@@ -470,7 +470,7 @@ PecStrokesPerTimePlot <- function(df, pecstrokes) {
       size = .5
     ) +
     xlab('Total time of turn (s)') +
-    ylab('Fin beat frequency (Hz)') +
+    ylab('Fin beat frequency\n(Hz)') +
     theme(
       axis.text = element_text(size = 8),
       axis.title = element_text(size = 8, face = "bold"),
@@ -502,7 +502,7 @@ BackingDataPlot <- function(df, backingdata.lm) {
       color = 'black'
     ) +
     xlab('Total time of turn (s)') +
-    ylab('Number of backing strokes') +
+    ylab('Number of\nbacking strokes') +
     theme(
       axis.text = element_text(size = 8),
       axis.title = element_text(size = 8, face = "bold"),
@@ -545,7 +545,7 @@ PecFinAmplitudePlot <- function(df) {
       plot.margin = grid::unit(c(.05, .05, .05, .05), "cm")
     ) +
     labs(color = 'Turn Speed') +
-    ylab('Pectoral Fin Angle (degrees)') +
+    ylab('Pectoral Fin\nAngle (degrees)') +
     xlab('Fin side')
 }
 

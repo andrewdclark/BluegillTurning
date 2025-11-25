@@ -267,8 +267,10 @@ MoISnoutAngSlow <- MeanMoIMeanSnoutAng |> AddBackSpeed(maindata) |> filter(Speed
 meanSlowSnoutAng.lm <- lm(meansnoutangle.degps ~ meanpercMoI, data = MoISnoutAngSlow)
 summary(meanSlowSnoutAng.lm)
 
-MeanMoIMeanSnoutAng |> MeanMoiMeanSnoutAngVelPlot(meanSnoutAng.lm, meanFastSnoutAng.lm, meanSlowSnoutAng.lm)
-ggsave('SnoutVelMoI.jpg', path = here("ProcessedData/Figures/"), width = 6.5, height = 4, dpi = 300)
+MeanMoIMeanSnoutAng |> MeanMoiMeanSnoutAngVelPlot(meanSnoutAng.lm, meanFastSnoutAng.lm, meanSlowSnoutAng.lm) +
+  theme(legend.position = 'none')
+
+ggsave('SnoutVelMoI.pdf', path = here("ProcessedData/Figures/"), width = 3.5, height = 2.5, units = 'in', dpi = 300)
 ```
 
 # Torque
@@ -294,8 +296,11 @@ MoISnoutVelTiming <- MoI |>
           tminMoI = first(t.sec[which.min(MoI.gcm2)]),
           Speed.group = first(as.character(Speed.group))) 
 
-MoISnoutVelTiming |> MoISnoutVelTimingPlot()
-ggsave('VelocityMoITiming.jpg', path = here("ProcessedData/Figures/"), width = 6.5, height = 4, dpi = 300)
+MoISnoutVelTiming |> 
+  MoISnoutVelTimingPlot() +
+  theme(legend.position = 'none')
+
+ggsave('VelocityMoITiming.pdf', path = here("ProcessedData/Figures/"), width = 3.5, height = 2.5, units = 'in', dpi = 300)
 
 MoIvelTiming <- MoISnoutVelTiming %>% 
   group_by(ID) %>% 
@@ -676,14 +681,16 @@ summary(totalpecstrokes.lm)
 totalpecstrokesmodel <- lmer(TotalPecStrokes ~ Speed.group + (1 | Individual), data = pecstrokes)
 Anova(totalpecstrokesmodel)
 
-pecstrokes |> TotalPecStrokesPlot(totalpecstrokes.lm)
-ggsave('TotalPecStrokes.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
+pecstroke_fig <-
+  pecstrokes |> TotalPecStrokesPlot(totalpecstrokes.lm)
 
 strokespertimemodel <- lmer(StrokesPerTime.sps ~ Speed.group + (1 | Individual), data = pecstrokes)
 Anova(strokespertimemodel)
 
-pecstrokes |> PecStrokesPerTimePlot(pecstrokes)
-ggsave('TotalPecStrokesPerTime.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
+pecfreq_fig <-
+  pecstrokes |> PecStrokesPerTimePlot(pecstrokes)
+
+pecstroke_fig + pecfreq_fig
 ```
 
 ```{r}
@@ -701,8 +708,10 @@ pecvectorangles <- pecfindata |> calcPecFinAngles()
 
 ## Now we look for a role for fin side with plots
 ```{r}
-pecvectorangles |> PecFinAmplitudePlot()
-ggsave('PecFinAmplitude.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
+pecfinamp_fig <-
+  pecvectorangles |> PecFinAmplitudePlot()
+
+pecfinamp_fig
 ```
 
 ### And with stats
@@ -739,8 +748,11 @@ backingdata <- PecStrokeCountTime |>
 backingdata.lm <- lm(numberofbackingstrokes ~ totaltime, data = backingdata)
 summary(backingdata.lm)
 
-backingdata |> BackingDataPlot(backingdata.lm)
-ggsave('TotalBackingStrokes.jpg', path = here("ProcessedData/Figures/"), width = 3.25, height = 2, dpi = 300)
+backing_fig <-
+  backingdata |> 
+  BackingDataPlot(backingdata.lm)
+
+backing_fig
 ```
 
 ### And do the stats
@@ -754,6 +766,16 @@ backingdata |>
   summary()
 
 Anova(lmer(numberofbackingstrokes ~ Speed.group + (1 | Individual), data = backingdata))
+```
+
+Put together the figure.
+
+```{r}
+pecstroke_fig + pecfreq_fig + pecfinamp_fig + backing_fig &
+  plot_annotation(tag_levels = 'A')
+
+ggsave(here('ProcessedData', 'Figures', 'PectoralFins.pdf'),
+       width=6, height=4, units='in')
 ```
 
 # Momentum
